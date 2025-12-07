@@ -112,81 +112,114 @@ class NiimbotLabelPrinterPlugin : FlutterPlugin, MethodCallHandler {
 
             result.success(lista)
         } else if (call.method == "connect") {
-            var macimpresora = call.arguments.toString();
-            //Log.d(TAG, "coneccting kt: mac: "+macimpresora);
-            if (macimpresora.length > 0) {
-                mac = macimpresora;
-            } else {
-                result.success(false)
-            }
+            // var macimpresora = call.arguments.toString();
+            // //Log.d(TAG, "coneccting kt: mac: "+macimpresora);
+            // if (macimpresora.length > 0) {
+            //     mac = macimpresora;
+            // } else {
+            //     result.success(false)
+            // }
 
-            GlobalScope.launch(Dispatchers.IO) {
-                try {
-                    val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-                    if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-                        val device = bluetoothAdapter.getRemoteDevice(mac)
-                        bluetoothSocket = device?.createRfcommSocketToServiceRecord(
-                            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-                        )
-                        bluetoothSocket?.connect()
-                        result.success(true)
-                    } else {
-                        result.success(false)
-                    }
-                } catch (e: IOException) {
-                    e.printStackTrace()
+            // GlobalScope.launch(Dispatchers.IO) {
+            //     try {
+            //         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+            //         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+            //             val device = bluetoothAdapter.getRemoteDevice(mac)
+            //             bluetoothSocket = device?.createRfcommSocketToServiceRecord(
+            //                 UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            //             )
+            //             bluetoothSocket?.connect()
+            //             result.success(true)
+            //         } else {
+            //             result.success(false)
+            //         }
+            //     } catch (e: IOException) {
+            //         e.printStackTrace()
+            //         result.success(false)
+            //     }
+            // }
+                val macimpresora = call.arguments.toString()
+    if (macimpresora.isNotEmpty()) {
+        mac = macimpresora
+    } else {
+        result.success(false)
+        return
+    }
+
+    GlobalScope.launch(Dispatchers.IO) {
+        try {
+            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+                val device = bluetoothAdapter.getRemoteDevice(mac)
+                bluetoothSocket = device.createRfcommSocketToServiceRecord(
+                    UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+                )
+                bluetoothSocket?.connect()
+                withContext(Dispatchers.Main) {
+                    result.success(true)
+                }
+            } else {
+                withContext(Dispatchers.Main) {
                     result.success(false)
                 }
             }
-        } else if (call.method == "send") {
-            val datosImagen = call.arguments as Map<String, Any>
-
-            // B21, B1, B18: máx. 384 píxeles (casi igual a 50 mm * 8 px/mm = 400)
-            // D11: máx. 96 píxeles (casi igual a 15 mm * 8 px/mm = 120)
-            // B1: 400 ancho x 240 alto
-            // Se sacan los porcentajes asi: si es lable 50 x 30 se multiplica por 8 pixeles, ejemplo 50*8=400 y 30*8=240
-
-            // Extraer los datos del mapa
-            val bytes = (datosImagen["bytes"] as? List<Int>)?.map { it.toByte() }?.toByteArray()
-            val width = (datosImagen["width"] as? Int) ?: 0
-            val height = (datosImagen["height"] as? Int) ?: 0
-            val rotate = (datosImagen["rotate"] as? Boolean) ?: false
-            val invertColor = (datosImagen["invertColor"] as? Boolean) ?: false
-            val density = (datosImagen["density"] as? Int) ?: 3
-            val labelType = (datosImagen["labelType"] as? Int) ?: 1
-            //println("0. width: $width height: $height")
-
-            if (bytes != null && width > 0 && height > 0) {
-                // Verifica que el tamaño del buffer sea correcto
-                val expectedBufferSize = width * height * 4 // 4 bytes por píxel (ARGB_8888)
-                if (bytes.size != expectedBufferSize) {
-                    throw IllegalArgumentException("Buffer not large enough for pixels: expected $expectedBufferSize but got ${bytes.size}")
-                }
-                // Crear un Bitmap
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-
-                // Copiar los bytes al Bitmap
-                bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(bytes))
-
-                bluetoothSocket?.let { socket ->
-                    niimbotPrinter = NiimbotPrinter(mContext, socket)
-                    // Aquí puedes usar el bitmap para imprimir
-                    // Por ejemplo:
-                    GlobalScope.launch {
-                        niimbotPrinter.printBitmap(bitmap, density = density, labelType = labelType, rotate = rotate, invertColor = invertColor)
-                        result.success(true)
-                    }
-                } ?: result.success(false) //println("No hay conexión Bluetooth establecida")
-            } else {
-                println("Datos de imagen inválidos o incompletos")
-                println("bytes: $bytes")
-                println("width: $width")
-                println("height: $height")
+        } catch (e: IOException) {
+            e.printStackTrace()
+            bluetoothSocket?.close()
+            bluetoothSocket = null
+            withContext(Dispatchers.Main) {
                 result.success(false)
             }
+        }
+    }
+        } else if (call.method == "send") {
+    val datosImagen = call.arguments as Map<String, Any>
+
+    val bytes = (datosImagen["bytes"] as? List<Int>)?.map { it.toByte() }?.toByteArray()
+    val width = (datosImagen["width"] as? Int) ?: 0
+    val height = (datosImagen["height"] as? Int) ?: 0
+    val rotate = (datosImagen["rotate"] as? Boolean) ?: false
+    val invertColor = (datosImagen["invertColor"] as? Boolean) ?: false
+    val density = (datosImagen["density"] as? Int) ?: 3
+    val labelType = (datosImagen["labelType"] as? Int) ?: 1
+
+    if (bytes != null && width > 0 && height > 0) {
+        val expectedBufferSize = width * height * 4
+        if (bytes.size != expectedBufferSize) {
+            result.success(false)
+            return
+        }
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(bytes))
+
+        bluetoothSocket?.let { socket ->
+            niimbotPrinter = NiimbotPrinter(mContext, socket)
+
+            GlobalScope.launch {
+                try {
+                    niimbotPrinter.printBitmap(bitmap, density = density, labelType = labelType, rotate = rotate, invertColor = invertColor)
+                    println("✅ Print completed successfully.")
+                    withContext(Dispatchers.Main) {
+                        result.success(true)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    println("❌ Print failed: ${e.message}")
+                    bluetoothSocket?.close()
+                    bluetoothSocket = null
+                    withContext(Dispatchers.Main) {
+                        result.success(false)
+                    }
+                }
+            }
+        } ?: result.success(false)
+    } else {
+        result.success(false)
+    }
 
         } else if (call.method == "disconnect") {
-            disconncet()
+            disconnect()
             result.success(true)
         } else {
             result.notImplemented()
@@ -222,6 +255,7 @@ class NiimbotLabelPrinterPlugin : FlutterPlugin, MethodCallHandler {
 
     private suspend fun connect(): OutputStream? {
         //state = false
+           
         return withContext(Dispatchers.IO) {
             var outputStream: OutputStream? = null
             val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
@@ -258,9 +292,18 @@ class NiimbotLabelPrinterPlugin : FlutterPlugin, MethodCallHandler {
         }
     }
 
-    private fun disconncet() {
+    // private fun disconncet() {
+    //     bluetoothSocket?.close()
+    // }
+
+    private fun disconnect() {
+    try {
         bluetoothSocket?.close()
+    } catch (e: IOException) {
+        e.printStackTrace()
     }
+    bluetoothSocket = null
+}
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
